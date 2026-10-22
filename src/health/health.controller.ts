@@ -6,7 +6,7 @@ export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
   @Get()
-  async checkHealth(): Promise<{status: string}> {
+  async checkHealth(): Promise<{ status: string }> {
     return await this.healthService.checkDatabaseConnection();
   }
 }
