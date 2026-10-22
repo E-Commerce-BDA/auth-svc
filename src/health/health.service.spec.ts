@@ -16,6 +16,8 @@ describe('HealthService', () => {
   let loggerSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [HealthService],
     }).compile();
@@ -40,44 +42,57 @@ describe('HealthService', () => {
     expect(service).toBeDefined();
   });
 
-  it('returns healthy when the database answers', async () => {
-    query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
-
-    await expect(service.checkDatabaseConnection()).resolves.toEqual({
-      status: 'healthy',
-    });
+  it('reports liveness without touching the database', () => {
+    expect(service.checkLiveness()).toEqual({ status: 'ok' });
+    expect(mockedGetPool).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
   });
 
-  it('throws 503 when the database is unreachable', async () => {
+  it('reports ready with the database mark when the database answers', async () => {
+    query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+
+    await expect(service.checkReadiness()).resolves.toEqual({
+      status: 'ready',
+      checks: { db: 'up' },
+    });
+    expect(query).toHaveBeenCalledWith('SELECT 1');
+  });
+
+  it('throws 503 with the not_ready body when the database is unreachable', async () => {
     query.mockRejectedValue(new Error('connection refused'));
 
-    await expect(service.checkDatabaseConnection()).rejects.toThrow(
-      ServiceUnavailableException,
-    );
+    const error = await service
+      .checkReadiness()
+      .then(() => null)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getStatus()).toBe(503);
+    expect((error as ServiceUnavailableException).getResponse()).toEqual({
+      status: 'not_ready',
+      checks: { db: 'down' },
+    });
   });
 
   it('never leaks the database error to the caller', async () => {
     query.mockRejectedValue(new Error('password authentication failed'));
 
     const error = await service
-      .checkDatabaseConnection()
+      .checkReadiness()
       .then(() => null)
       .catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(ServiceUnavailableException);
-    const response = (error as ServiceUnavailableException).getResponse() as {
-      message: string;
-      statusCode: number;
-    };
-    expect(response.statusCode).toBe(503);
-    expect(response.message).toBe('Database connection failed');
-    expect(response.message).not.toContain('password');
+    const response = JSON.stringify(
+      (error as ServiceUnavailableException).getResponse(),
+    );
+    expect(response).not.toContain('password');
+    expect(response).not.toContain('authentication');
   });
 
   it('logs the underlying database error for the operator', async () => {
     query.mockRejectedValue(new Error('connection refused'));
 
-    await expect(service.checkDatabaseConnection()).rejects.toThrow(
+    await expect(service.checkReadiness()).rejects.toThrow(
       ServiceUnavailableException,
     );
 

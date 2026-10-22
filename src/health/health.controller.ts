@@ -6,7 +6,12 @@ export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
   @Get()
-  async checkHealth(): Promise<{ status: string }> {
-    return await this.healthService.checkDatabaseConnection();
+  checkLiveness(): { status: 'ok' } {
+    return this.healthService.checkLiveness();
+  }
+
+  @Get('ready')
+  checkReadiness(): Promise<{ status: 'ready'; checks: { db: 'up' } }> {
+    return this.healthService.checkReadiness();
   }
 }
