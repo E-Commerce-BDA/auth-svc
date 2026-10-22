@@ -37,8 +37,13 @@ describe('Database resilience (e2e)', () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     // The process must still be alive and serving: the pool drops the dead
-    // client and opens a fresh one for the next query.
-    await request(app.getHttpServer()).get('/health').expect(200);
+    // client and opens a fresh one for the next query. Readiness is what
+    // proves recovery; liveness is a constant and would pass regardless.
+    await request(app.getHttpServer()).get('/health/ready').expect(200);
+    await request(app.getHttpServer())
+      .get('/health')
+      .expect(200)
+      .expect({ status: 'ok' });
   });
 
   afterAll(async () => {
