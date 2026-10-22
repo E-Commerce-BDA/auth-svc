@@ -17,23 +17,23 @@ describe('Health (e2e)', () => {
     await app.init();
   });
 
-  it('/health (GET) reports healthy when the database is reachable', async () => {
+  it('/health (GET) reports liveness without database details', async () => {
     const response = await request(app.getHttpServer())
       .get('/health')
       .expect(200)
-      .expect({ status: 'healthy' });
+      .expect({ status: 'ok' });
 
-    expect(response.body).toEqual({ status: 'healthy' });
+    expect(Object.keys(response.body)).toEqual(['status']);
   });
 
-  it('/health (GET) does not leak database internals on success', async () => {
+  it('/health/ready (GET) reports the database as up', async () => {
     const response = await request(app.getHttpServer())
-      .get('/health')
-      .expect(200);
+      .get('/health/ready')
+      .expect(200)
+      .expect({ status: 'ready', checks: { db: 'up' } });
 
     expect(response.body).not.toHaveProperty('password');
     expect(response.body).not.toHaveProperty('databaseUrl');
-    expect(Object.keys(response.body)).toEqual(['status']);
   });
 
   afterAll(async () => {
