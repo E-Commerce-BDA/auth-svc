@@ -30,3 +30,19 @@ export interface RefreshTokenRow {
     revoked_at: Date | null
     created_at: Date
 }
+
+export interface AddressRow {
+    id: string
+    user_id: string
+    type: string
+    label: string | null
+    line1: string
+    line2: string | null
+    city: string
+    state: string | null
+    postal_code: string
+    country: string
+    is_default: boolean
+    created_at: Date
+    updated_at: Date
+}
