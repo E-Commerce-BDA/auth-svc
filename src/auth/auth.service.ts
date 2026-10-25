@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -14,6 +15,8 @@ import { UpdateProfileDTO } from './dto/update-profile.dto.js';
 import { ChangePasswordDTO } from './dto/change-password.dto.js';
 import { CreateAddressDTO } from './dto/create-address.dto.js';
 import { UpdateAddressDTO } from './dto/update-address.dto.js';
+import { ListUsersQueryDTO } from './dto/list-users-query.dto.js';
+import { CreateRoleDTO } from './dto/create-role.dto.js';
 import { getPool } from '../db/pool.js';
 import {
   createUser,
@@ -23,6 +26,12 @@ import {
   findUserById,
   updateUserProfile,
   updateUserPassword,
+  updateUserStatus as updateUserStatusQuery,
+  listUsers as listUsersQuery,
+  getAllRoles,
+  createRole as createRoleQuery,
+  findRolesBySlugs,
+  replaceUserRoles,
   getUserRoleSlugs,
 } from '../db/queries/users.sql.js';
 import {
@@ -458,6 +467,128 @@ export class AuthService {
       if (!deleted) {
         throw new NotFoundException('Address not found');
       }
+    } finally {
+      client.release();
+    }
+  }
+
+  // --- Admin RBAC & User Management ---
+
+  async listUsers(query: ListUsersQueryDTO) {
+    const client = await getPool().connect();
+    try {
+      const result = await listUsersQuery(client, {
+        page: query.page,
+        perPage: query.perPage,
+        status: query.status,
+      });
+
+      const sanitizedUsers = result.users.map((u) => ({
+        id: u.id,
+        email: u.email,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        phone: u.phone,
+        avatarUrl: u.avatar_url,
+        status: u.status,
+        lastLoginAt: u.last_login_at,
+        createdAt: u.created_at,
+        updatedAt: u.updated_at,
+      }));
+
+      return {
+        data: sanitizedUsers,
+        page: query.page,
+        perPage: query.perPage,
+        total: result.total,
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateUserStatus(userId: string, status: 'active' | 'disabled' | 'pending') {
+    const client = await getPool().connect();
+    try {
+      const user = await updateUserStatusQuery(client, { id: userId, status });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      // If user is disabled, immediately revoke all active refresh tokens!
+      if (status === 'disabled') {
+        await revokeAllUserTokens(client, { userId });
+      }
+
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          phone: user.phone,
+          avatarUrl: user.avatar_url,
+          status: user.status,
+          lastLoginAt: user.last_login_at,
+          createdAt: user.created_at,
+          updatedAt: user.updated_at,
+        },
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async getRoles() {
+    const client = await getPool().connect();
+    try {
+      const roles = await getAllRoles(client);
+      return { roles };
+    } finally {
+      client.release();
+    }
+  }
+
+  async createRole(dto: CreateRoleDTO) {
+    const client = await getPool().connect();
+    try {
+      const existing = await findRoleBySlug(client, { slug: dto.slug });
+      if (existing) {
+        throw new ConflictException('Role with this slug already exists');
+      }
+
+      const roleId = uuidv7();
+      const role = await createRoleQuery(client, {
+        id: roleId,
+        name: dto.name,
+        slug: dto.slug,
+        description: dto.description,
+      });
+
+      return { role };
+    } finally {
+      client.release();
+    }
+  }
+
+  async assignUserRoles(userId: string, roleSlugs: string[]) {
+    const client = await getPool().connect();
+    try {
+      const user = await findUserById(client, { id: userId });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      const roles = await findRolesBySlugs(client, { slugs: roleSlugs });
+      if (roles.length !== roleSlugs.length) {
+        throw new BadRequestException('One or more specified role slugs do not exist');
+      }
+
+      const roleIds = roles.map((r) => r.id);
+      await replaceUserRoles(client, { userId, roleIds });
+
+      const updatedRoleSlugs = await getUserRoleSlugs(client, { userId });
+      return { userRoles: updatedRoleSlugs };
     } finally {
       client.release();
     }
