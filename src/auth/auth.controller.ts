@@ -5,6 +5,7 @@ import {
   Patch,
   Delete,
   Param,
+  Query,
   Body,
   HttpCode,
   HttpStatus,
@@ -19,7 +20,13 @@ import { UpdateProfileDTO } from './dto/update-profile.dto.js';
 import { ChangePasswordDTO } from './dto/change-password.dto.js';
 import { CreateAddressDTO } from './dto/create-address.dto.js';
 import { UpdateAddressDTO } from './dto/update-address.dto.js';
+import { ListUsersQueryDTO } from './dto/list-users-query.dto.js';
+import { UpdateUserStatusDTO } from './dto/update-user-status.dto.js';
+import { CreateRoleDTO } from './dto/create-role.dto.js';
+import { AssignRolesDTO } from './dto/assign-roles.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
+import { RolesGuard } from './guards/roles.guard.js';
+import { Roles } from './decorators/roles.decorator.js';
 import { CurrentUser } from './decorators/current-user.decorator.js';
 
 @Controller('auth')
@@ -109,5 +116,49 @@ export class AuthController {
     @Param('id') addressId: string,
   ) {
     await this.authService.deleteAddress(userId, addressId);
+  }
+
+  // --- Admin RBAC & User Management Endpoints ---
+
+  @Get('users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async listUsers(@Query() query: ListUsersQueryDTO) {
+    return this.authService.listUsers(query);
+  }
+
+  @Patch('users/:id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async updateUserStatus(
+    @Param('id') userId: string,
+    @Body() dto: UpdateUserStatusDTO,
+  ) {
+    return this.authService.updateUserStatus(userId, dto.status);
+  }
+
+  @Get('roles')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getRoles() {
+    return this.authService.getRoles();
+  }
+
+  @Post('roles')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @HttpCode(HttpStatus.CREATED)
+  async createRole(@Body() dto: CreateRoleDTO) {
+    return this.authService.createRole(dto);
+  }
+
+  @Patch('users/:id/roles')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async assignUserRoles(
+    @Param('id') userId: string,
+    @Body() dto: AssignRolesDTO,
+  ) {
+    return this.authService.assignUserRoles(userId, dto.roleSlugs);
   }
 }
