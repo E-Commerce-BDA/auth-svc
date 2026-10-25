@@ -83,6 +83,18 @@ export async function revokeTokenFamily(
   await client.query(REVOKE_FAMILY, [params.familyId]);
 }
 
+export async function revokeAllUserTokens(
+  client: pgClient,
+  params: { userId: string },
+): Promise<void> {
+  const REVOKE_ALL = `
+    UPDATE auth.refresh_tokens
+    SET revoked_at = now()
+    WHERE user_id = $1 AND revoked_at IS NULL
+  `;
+  await client.query(REVOKE_ALL, [params.userId]);
+}
+
 export async function findActiveFamilyToken(
   client: pgClient,
   params: { familyId: string },
