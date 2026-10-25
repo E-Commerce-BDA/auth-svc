@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
@@ -9,6 +10,8 @@ import { randomBytes, createHash } from 'node:crypto';
 import { RegisterDTO } from './dto/register.dto.js';
 import { LoginDTO } from './dto/login.dto.js';
 import { RefreshDTO } from './dto/refresh.dto.js';
+import { UpdateProfileDTO } from './dto/update-profile.dto.js';
+import { ChangePasswordDTO } from './dto/change-password.dto.js';
 import { getPool } from '../db/pool.js';
 import {
   createUser,
@@ -16,6 +19,8 @@ import {
   assignUserRole,
   findUserByEmail,
   findUserById,
+  updateUserProfile,
+  updateUserPassword,
   getUserRoleSlugs,
 } from '../db/queries/users.sql.js';
 import {
@@ -24,6 +29,7 @@ import {
   revokeRefreshToken,
   revokeTokenFamily,
   findActiveFamilyToken,
+  revokeAllUserTokens,
 } from '../db/queries/tokens.sql.js';
 import { JwtService } from '@nestjs/jwt';
 
@@ -245,6 +251,91 @@ export class AuthService {
       if (token && token.revoked_at === null) {
         await revokeRefreshToken(client, { tokenId: token.id });
       }
+    } finally {
+      client.release();
+    }
+  }
+
+  async getProfile(userId: string) {
+    const client = await getPool().connect();
+    try {
+      const user = await findUserById(client, { id: userId });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      const roles = await getUserRoleSlugs(client, { userId: user.id });
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          phone: user.phone,
+          avatarUrl: user.avatar_url,
+          status: user.status,
+          roles,
+          lastLoginAt: user.last_login_at,
+          createdAt: user.created_at,
+          updatedAt: user.updated_at,
+        },
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDTO) {
+    const client = await getPool().connect();
+    try {
+      const user = await updateUserProfile(client, {
+        id: userId,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        phone: dto.phone,
+        avatarUrl: dto.avatarUrl,
+      });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      const roles = await getUserRoleSlugs(client, { userId: user.id });
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          phone: user.phone,
+          avatarUrl: user.avatar_url,
+          status: user.status,
+          roles,
+          lastLoginAt: user.last_login_at,
+          createdAt: user.created_at,
+          updatedAt: user.updated_at,
+        },
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDTO) {
+    const client = await getPool().connect();
+    try {
+      const user = await findUserById(client, { id: userId });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      const isValid = await argon2.verify(user.password_hash, dto.currentPassword);
+      if (!isValid) {
+        throw new UnauthorizedException('Current password incorrect');
+      }
+
+      const newPasswordHash = await argon2.hash(dto.newPassword);
+      await updateUserPassword(client, { id: userId, passwordHash: newPasswordHash });
+
+      // Security rule: revoke all existing sessions for this user!
+      await revokeAllUserTokens(client, { userId });
     } finally {
       client.release();
     }
