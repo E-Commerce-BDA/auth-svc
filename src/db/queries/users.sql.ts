@@ -1,7 +1,7 @@
-import { Pool, PoolClient } from 'pg';
-import { UserRow, RoleRow } from '../rows.js';
+import { Pool, PoolClient } from "pg";
+import { RoleRow, UserRow } from "../rows.js";
 
-type pgClient = Pool | PoolClient;
+type pgClient = Pool | PoolClient
 
 export async function createUser(
     client: pgClient,
@@ -13,13 +13,12 @@ export async function createUser(
         lastName: string
     }
 ): Promise<UserRow> {
-    const INSERT_USER = `
-    INSERT INTO auth.users(
-        id, email, password_hash, first_name, last_name)
-    VALUES ($1, $2, $3, $4, $5)
-    RETURNING *
+    const CREATE_USER = `
+    INSERT INTO auth.users(id, email, password_hash, first_name, last_name)
+    VALUES($1, $2, $3, $4, $5)
+    RETURNING id, email, password_hash, first_name, last_name, phone, avatar_url, status, last_login_at, created_at, updated_at
     `
-    const res = await client.query(INSERT_USER, [
+    const res = await client.query(CREATE_USER, [
         params.id,
         params.email,
         params.passwordHash,
@@ -45,7 +44,7 @@ export async function findRoleBySlug(
 export async function assignUserRole(
     client: pgClient,
     params: {
-        userId: string,
+        userId: string
         roleId: string
     }
 ): Promise<void> {
@@ -68,6 +67,21 @@ export async function findUserByEmail(
     WHERE email = $1
     `
     const res = await client.query(FIND_USER, [params.email])
+    return res.rows[0] ?? null
+}
+
+export async function findUserById(
+    client: pgClient,
+    params: {
+        id: string
+    }
+): Promise<UserRow | null> {
+    const FIND_USER = `
+    SELECT id, email, password_hash, first_name, last_name, status
+    FROM auth.users 
+    WHERE id = $1
+    `
+    const res = await client.query(FIND_USER, [params.id])
     return res.rows[0] ?? null
 }
 
