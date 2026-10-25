@@ -55,3 +55,35 @@ export async function assignUserRole(
     `
     await client.query(ASSIGN_ROLE, [params.userId, params.roleId])
 }
+
+export async function findUserByEmail(
+    client: pgClient,
+    params: {
+        email: string
+    }
+): Promise<UserRow | null> {
+    const FIND_USER = `
+    SELECT id, email, password_hash, first_name, last_name, status
+    FROM auth.users 
+    WHERE email = $1
+    `
+    const res = await client.query(FIND_USER, [params.email])
+    return res.rows[0] ?? null
+}
+
+export async function getUserRoleSlugs(
+    client: pgClient,
+    params: {
+        userId: string
+    }
+): Promise<string[]> {
+    const FIND_ROLES = `
+    SELECT r.slug
+    FROM auth.users u
+    JOIN auth.user_roles ur ON ur.user_id = u.id
+    JOIN auth.roles r ON r.id = ur.role_id
+    WHERE u.id = $1
+    `
+    const res = await client.query(FIND_ROLES, [params.userId])
+    return res.rows.map((row) => row.slug)
+}
