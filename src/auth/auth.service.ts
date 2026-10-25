@@ -8,15 +8,23 @@ import * as argon2 from 'argon2';
 import { randomBytes, createHash } from 'node:crypto';
 import { RegisterDTO } from './dto/register.dto.js';
 import { LoginDTO } from './dto/login.dto.js';
+import { RefreshDTO } from './dto/refresh.dto.js';
 import { getPool } from '../db/pool.js';
 import {
   createUser,
   findRoleBySlug,
   assignUserRole,
   findUserByEmail,
+  findUserById,
   getUserRoleSlugs,
 } from '../db/queries/users.sql.js';
-import { createRefreshToken } from '../db/queries/tokens.sql.js';
+import {
+  createRefreshToken,
+  findRefreshTokenByHash,
+  revokeRefreshToken,
+  revokeTokenFamily,
+  findActiveFamilyToken,
+} from '../db/queries/tokens.sql.js';
 import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
@@ -137,6 +145,106 @@ export class AuthService {
         accessToken,
         refreshToken: rawRefreshToken,
       };
+    } finally {
+      client.release();
+    }
+  }
+
+  async refresh(dto: RefreshDTO) {
+    const tokenHash = createHash('sha256').update(dto.refreshToken).digest('hex');
+    const client = await getPool().connect();
+
+    try {
+      const token = await findRefreshTokenByHash(client, { tokenHash });
+      if (!token) {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
+
+      if (new Date(token.expires_at).getTime() <= Date.now()) {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
+
+      // Check if token was previously revoked (theft or grace period reuse)
+      if (token.revoked_at !== null) {
+        const revokedTime = new Date(token.revoked_at).getTime();
+        const diff = Date.now() - revokedTime;
+
+        // Grace window ONLY applies if there is an active unrevoked token in this family
+        const activeFamilyToken = await findActiveFamilyToken(client, { familyId: token.family_id });
+
+        if (activeFamilyToken && diff < 10000) {
+          const user = await findUserById(client, { id: token.user_id });
+          if (!user || user.status !== 'active') {
+            throw new UnauthorizedException('Account is disabled');
+          }
+          const roles = await getUserRoleSlugs(client, { userId: user.id });
+          const accessToken = await this.jwtService.signAsync({
+            sub: user.id,
+            email: user.email,
+            roles,
+          });
+
+          return {
+            accessToken,
+            refreshToken: dto.refreshToken,
+          };
+        }
+
+        // Theft detected (>10s or whole family already revoked): Revoke entire family!
+        await revokeTokenFamily(client, { familyId: token.family_id });
+        throw new UnauthorizedException('Session terminated due to security violation');
+      }
+
+      // Normal rotation:
+      const user = await findUserById(client, { id: token.user_id });
+      if (!user || user.status !== 'active') {
+        throw new UnauthorizedException('Account is disabled');
+      }
+
+      // Revoke current token
+      await revokeRefreshToken(client, { tokenId: token.id });
+
+      // Create new refresh token with same family_id
+      const rawRefreshToken = randomBytes(32).toString('hex');
+      const newTokenHash = createHash('sha256').update(rawRefreshToken).digest('hex');
+      const newTokenId = uuidv7();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+      await createRefreshToken(client, {
+        id: newTokenId,
+        userId: user.id,
+        familyId: token.family_id,
+        tokenHash: newTokenHash,
+        expiresAt,
+      });
+
+      const roles = await getUserRoleSlugs(client, { userId: user.id });
+      const accessToken = await this.jwtService.signAsync({
+        sub: user.id,
+        email: user.email,
+        roles,
+      });
+
+      return {
+        accessToken,
+        refreshToken: rawRefreshToken,
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async logout(refreshToken?: string) {
+    if (!refreshToken) {
+      return;
+    }
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+    const client = await getPool().connect();
+    try {
+      const token = await findRefreshTokenByHash(client, { tokenHash });
+      if (token && token.revoked_at === null) {
+        await revokeRefreshToken(client, { tokenId: token.id });
+      }
     } finally {
       client.release();
     }
