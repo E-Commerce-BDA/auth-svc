@@ -12,6 +12,8 @@ import { LoginDTO } from './dto/login.dto.js';
 import { RefreshDTO } from './dto/refresh.dto.js';
 import { UpdateProfileDTO } from './dto/update-profile.dto.js';
 import { ChangePasswordDTO } from './dto/change-password.dto.js';
+import { CreateAddressDTO } from './dto/create-address.dto.js';
+import { UpdateAddressDTO } from './dto/update-address.dto.js';
 import { getPool } from '../db/pool.js';
 import {
   createUser,
@@ -31,6 +33,14 @@ import {
   findActiveFamilyToken,
   revokeAllUserTokens,
 } from '../db/queries/tokens.sql.js';
+import {
+  getUserAddresses,
+  findAddressByIdAndUser,
+  unsetDefaultAddress,
+  createAddress as createAddressQuery,
+  updateAddress as updateAddressQuery,
+  deleteAddress as deleteAddressQuery,
+} from '../db/queries/addresses.sql.js';
 import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
@@ -336,6 +346,118 @@ export class AuthService {
 
       // Security rule: revoke all existing sessions for this user!
       await revokeAllUserTokens(client, { userId });
+    } finally {
+      client.release();
+    }
+  }
+
+  async getAddresses(userId: string) {
+    const client = await getPool().connect();
+    try {
+      const addresses = await getUserAddresses(client, { userId });
+      return { addresses };
+    } finally {
+      client.release();
+    }
+  }
+
+  async createAddress(userId: string, dto: CreateAddressDTO) {
+    const client = await getPool().connect();
+    let transactionStarted = false;
+    try {
+      await client.query('BEGIN');
+      transactionStarted = true;
+
+      if (dto.isDefault) {
+        await unsetDefaultAddress(client, { userId });
+      }
+
+      const addressId = uuidv7();
+      const address = await createAddressQuery(client, {
+        id: addressId,
+        userId,
+        type: dto.type,
+        label: dto.label,
+        line1: dto.line1,
+        line2: dto.line2,
+        city: dto.city,
+        state: dto.state,
+        postalCode: dto.postalCode,
+        country: dto.country,
+        isDefault: dto.isDefault,
+      });
+
+      await client.query('COMMIT');
+      transactionStarted = false;
+      return { address };
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          // ignore
+        }
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateAddress(userId: string, addressId: string, dto: UpdateAddressDTO) {
+    const client = await getPool().connect();
+    let transactionStarted = false;
+    try {
+      await client.query('BEGIN');
+      transactionStarted = true;
+
+      const existing = await findAddressByIdAndUser(client, { id: addressId, userId });
+      if (!existing) {
+        throw new NotFoundException('Address not found');
+      }
+
+      if (dto.isDefault) {
+        await unsetDefaultAddress(client, { userId });
+      }
+
+      const address = await updateAddressQuery(client, {
+        id: addressId,
+        userId,
+        type: dto.type,
+        label: dto.label,
+        line1: dto.line1,
+        line2: dto.line2,
+        city: dto.city,
+        state: dto.state,
+        postalCode: dto.postalCode,
+        country: dto.country,
+        isDefault: dto.isDefault,
+      });
+
+      await client.query('COMMIT');
+      transactionStarted = false;
+      return { address };
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          // ignore
+        }
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deleteAddress(userId: string, addressId: string) {
+    const client = await getPool().connect();
+    try {
+      const deleted = await deleteAddressQuery(client, { id: addressId, userId });
+      if (!deleted) {
+        throw new NotFoundException('Address not found');
+      }
     } finally {
       client.release();
     }
