@@ -41,6 +41,19 @@ export async function findRoleBySlug(
     return res.rows[0] ?? null
 }
 
+export async function findRolesBySlugs(
+    client: pgClient,
+    params: {
+        slugs: string[]
+    }
+): Promise<RoleRow[]> {
+    const FIND_ROLES = `
+    SELECT * FROM auth.roles WHERE slug = ANY($1)
+    `
+    const res = await client.query(FIND_ROLES, [params.slugs])
+    return res.rows
+}
+
 export async function assignUserRole(
     client: pgClient,
     params: {
@@ -51,8 +64,25 @@ export async function assignUserRole(
     const ASSIGN_ROLE = `
     INSERT INTO auth.user_roles(user_id, role_id)
     VALUES($1, $2)
+    ON CONFLICT (user_id, role_id) DO NOTHING
     `
     await client.query(ASSIGN_ROLE, [params.userId, params.roleId])
+}
+
+export async function replaceUserRoles(
+    client: pgClient,
+    params: {
+        userId: string
+        roleIds: string[]
+    }
+): Promise<void> {
+    await client.query('DELETE FROM auth.user_roles WHERE user_id = $1', [params.userId])
+    for (const roleId of params.roleIds) {
+        await client.query(
+            'INSERT INTO auth.user_roles(user_id, role_id) VALUES($1, $2) ON CONFLICT DO NOTHING',
+            [params.userId, roleId],
+        )
+    }
 }
 
 export async function findUserByEmail(
@@ -129,6 +159,95 @@ export async function updateUserPassword(
     WHERE id = $1
     `
     await client.query(UPDATE_PASSWORD, [params.id, params.passwordHash])
+}
+
+export async function updateUserStatus(
+    client: pgClient,
+    params: {
+        id: string
+        status: string
+    }
+): Promise<UserRow | null> {
+    const UPDATE_STATUS = `
+    UPDATE auth.users
+    SET status = $2,
+        updated_at = now()
+    WHERE id = $1
+    RETURNING id, email, password_hash, first_name, last_name, phone, avatar_url, status, last_login_at, created_at, updated_at
+    `
+    const res = await client.query(UPDATE_STATUS, [params.id, params.status])
+    return res.rows[0] ?? null
+}
+
+export async function listUsers(
+    client: pgClient,
+    params: {
+        page: number
+        perPage: number
+        status?: string
+    }
+): Promise<{ users: UserRow[]; total: number }> {
+    const offset = (params.page - 1) * params.perPage
+    let query = `
+    SELECT id, email, password_hash, first_name, last_name, phone, avatar_url, status, last_login_at, created_at, updated_at
+    FROM auth.users
+    `
+    let countQuery = `SELECT count(*) FROM auth.users`
+    const queryParams: any[] = []
+
+    if (params.status) {
+        query += ` WHERE status = $1`
+        countQuery += ` WHERE status = $1`
+        queryParams.push(params.status)
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`
+    queryParams.push(params.perPage, offset)
+
+    const [dataRes, countRes] = await Promise.all([
+        client.query(query, queryParams),
+        client.query(countQuery, params.status ? [params.status] : []),
+    ])
+
+    return {
+        users: dataRes.rows,
+        total: parseInt(countRes.rows[0]?.count ?? '0', 10),
+    }
+}
+
+export async function getAllRoles(
+    client: pgClient,
+): Promise<RoleRow[]> {
+    const GET_ROLES = `
+    SELECT id, name, slug, description, created_at, updated_at
+    FROM auth.roles
+    ORDER BY created_at ASC
+    `
+    const res = await client.query(GET_ROLES)
+    return res.rows
+}
+
+export async function createRole(
+    client: pgClient,
+    params: {
+        id: string
+        name: string
+        slug: string
+        description?: string
+    }
+): Promise<RoleRow> {
+    const INSERT_ROLE = `
+    INSERT INTO auth.roles(id, name, slug, description)
+    VALUES($1, $2, $3, $4)
+    RETURNING id, name, slug, description, created_at, updated_at
+    `
+    const res = await client.query(INSERT_ROLE, [
+        params.id,
+        params.name,
+        params.slug,
+        params.description ?? null,
+    ])
+    return res.rows[0]
 }
 
 export async function getUserRoleSlugs(
