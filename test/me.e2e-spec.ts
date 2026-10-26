@@ -36,15 +36,25 @@ describe('Auth Profile & Password Change (e2e)', () => {
 
   it('GET /api/v1/auth/me requires Bearer token', async () => {
     // 1. Missing header
-    await request(app.getHttpServer())
+    const missing = await request(app.getHttpServer())
       .get('/api/v1/auth/me')
       .expect(401);
 
+    expect(missing.body.error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+    });
+    expect(missing.body.requestId).toEqual(expect.any(String));
+    expect(missing.body.timestamp).toEqual(expect.any(String));
+
     // 2. Invalid token
-    await request(app.getHttpServer())
+    const invalid = await request(app.getHttpServer())
       .get('/api/v1/auth/me')
       .set('Authorization', 'Bearer invalid-token')
       .expect(401);
+
+    expect(invalid.body.error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+    });
   });
 
   it('GET /api/v1/auth/me rejects tokens with wrong or missing issuer/audience', async () => {
