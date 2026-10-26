@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { Request } from 'express';
 import { vi } from 'vitest';
 import { HttpExceptionFilter } from './http-exception.filter.js';
 
