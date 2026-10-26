@@ -6,6 +6,12 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import {
+  JWT_ALGORITHM,
+  JWT_AUDIENCE,
+  JWT_CLOCK_TOLERANCE_SECONDS,
+  JWT_ISSUER,
+} from '../auth.constants.js';
 
 export interface AuthenticatedUser {
   sub: string;
@@ -31,7 +37,15 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
-      const payload = await this.jwtService.verifyAsync<AuthenticatedUser>(token);
+      const payload = await this.jwtService.verifyAsync<AuthenticatedUser>(
+        token,
+        {
+          issuer: JWT_ISSUER,
+          audience: JWT_AUDIENCE,
+          algorithms: [JWT_ALGORITHM],
+          clockTolerance: JWT_CLOCK_TOLERANCE_SECONDS,
+        },
+      );
       (request as any).user = payload;
       return true;
     } catch {
