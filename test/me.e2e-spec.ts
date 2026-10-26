@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module.js';
@@ -42,6 +44,42 @@ describe('Auth Profile & Password Change (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/v1/auth/me')
       .set('Authorization', 'Bearer invalid-token')
+      .expect(401);
+  });
+
+  it('GET /api/v1/auth/me rejects tokens with wrong or missing issuer/audience', async () => {
+    const secret = app.get(ConfigService).getOrThrow<string>('JWT_SECRET');
+    const jwt = new JwtService({ secret });
+    const claims = {
+      sub: randomUUID(),
+      email: `claims-${randomUUID()}@example.com`,
+      roles: ['customer'],
+    };
+
+    const wrongIssuer = await jwt.signAsync(claims, {
+      issuer: 'not-ecom-auth',
+      audience: 'ecom-api',
+      expiresIn: '15m',
+    });
+    await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${wrongIssuer}`)
+      .expect(401);
+
+    const wrongAudience = await jwt.signAsync(claims, {
+      issuer: 'ecom-auth',
+      audience: 'not-ecom-api',
+      expiresIn: '15m',
+    });
+    await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${wrongAudience}`)
+      .expect(401);
+
+    const missingClaims = await jwt.signAsync(claims, { expiresIn: '15m' });
+    await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${missingClaims}`)
       .expect(401);
   });
 
