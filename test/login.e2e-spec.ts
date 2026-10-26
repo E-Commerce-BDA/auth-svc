@@ -72,6 +72,12 @@ describe('Auth Login (e2e)', () => {
     const parts = response.body.accessToken.split('.');
     expect(parts.length).toBe(3); // JWT format (header.payload.signature)
 
+    const payload = JSON.parse(
+      Buffer.from(parts[1], 'base64url').toString('utf8'),
+    ) as { iss?: string; aud?: string };
+    expect(payload.iss).toBe('ecom-auth');
+    expect(payload.aud).toBe('ecom-api');
+
     expect(typeof response.body.refreshToken).toBe('string');
     expect(response.body.refreshToken.length).toBe(64); // 32 hex bytes
   });
