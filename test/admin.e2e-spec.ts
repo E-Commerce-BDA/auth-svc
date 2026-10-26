@@ -50,10 +50,16 @@ describe('Auth Admin RBAC & User Management (e2e)', () => {
     const customerToken = loginRes.body.accessToken;
 
     // 2. Customer attempts to list users -> 403 Forbidden
-    await request(app.getHttpServer())
+    const forbidden = await request(app.getHttpServer())
       .get('/api/v1/auth/users')
       .set('Authorization', `Bearer ${customerToken}`)
       .expect(403);
+
+    expect(forbidden.body.error).toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    expect(forbidden.body.requestId).toEqual(expect.any(String));
+    expect(forbidden.body.timestamp).toEqual(expect.any(String));
 
     // 3. Customer attempts to create role -> 403 Forbidden
     await request(app.getHttpServer())
