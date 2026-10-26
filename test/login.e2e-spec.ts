@@ -129,7 +129,13 @@ describe('Auth Login (e2e)', () => {
       })
       .expect(401);
 
-    expect(response.body.message).toBe('Invalid email or password');
+    expect(response.body.error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      message: 'Invalid email or password',
+    });
+    expect(response.body.requestId).toEqual(expect.any(String));
+    expect(response.body.timestamp).toEqual(expect.any(String));
+    expect(response.body).not.toHaveProperty('statusCode');
   });
 
   it('POST /api/v1/auth/login rejects non-existent email with identical 401', async () => {
@@ -141,7 +147,13 @@ describe('Auth Login (e2e)', () => {
       })
       .expect(401);
 
-    expect(response.body.message).toBe('Invalid email or password');
+    expect(response.body.error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      message: 'Invalid email or password',
+    });
+    expect(response.body.requestId).toEqual(expect.any(String));
+    expect(response.body.timestamp).toEqual(expect.any(String));
+    expect(response.body).not.toHaveProperty('statusCode');
   });
 
   it('POST /api/v1/auth/login returns 400 when email format is invalid', async () => {
