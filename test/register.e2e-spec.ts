@@ -82,7 +82,12 @@ describe('Auth Register (e2e)', () => {
       })
       .expect(409);
 
-    expect(response.body.message).toContain('Email already exists');
+    expect(response.body.error).toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(response.body.error.message).toContain('Email already exists');
+    expect(response.body.requestId).toEqual(expect.any(String));
+    expect(response.body.timestamp).toEqual(expect.any(String));
   });
 
   it('POST /api/v1/auth/register returns 400 when password violates policy', async () => {
@@ -98,7 +103,13 @@ describe('Auth Register (e2e)', () => {
       .send(payload)
       .expect(400);
 
-    expect(response.body.message).toBeDefined();
+    expect(response.body.error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      message: 'Validation failed',
+    });
+    expect(Array.isArray(response.body.error.details)).toBe(true);
+    expect(response.body.requestId).toEqual(expect.any(String));
+    expect(response.body.timestamp).toEqual(expect.any(String));
   });
 
   it('POST /api/v1/auth/register returns 400 when email is invalid', async () => {
