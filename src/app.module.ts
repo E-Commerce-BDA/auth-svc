@@ -18,6 +18,8 @@ import Joi from 'joi';
       validationSchema: Joi.object({
         DATABASE_URL: Joi.string().uri().required(),
         JWT_SECRET: Joi.string().min(32).required(),
+        KAFKA_BROKERS: Joi.string().default('localhost:9092'),
+        DISABLE_OUTBOX_RELAY: Joi.boolean().default(false),
       }),
     }),
   ],

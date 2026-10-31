@@ -51,10 +51,14 @@ import {
   deleteAddress as deleteAddressQuery,
 } from '../db/queries/addresses.sql.js';
 import { JwtService } from '@nestjs/jwt';
+import { AuthOutbox } from '../outbox/auth-outbox.js';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly outbox: AuthOutbox,
+  ) {}
 
   async register(dto: RegisterDTO) {
     const userId = uuidv7();
@@ -85,6 +89,10 @@ export class AuthService {
         userId: user.id,
         roleId: role.id,
       });
+
+      // Same transaction as the user row: a validation failure here rolls the
+      // account back too, which is what makes "one registration, one event" true.
+      await this.outbox.recordUserRegistered(client, user);
 
       await client.query('COMMIT');
       transactionStarted = false;

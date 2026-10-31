@@ -22,7 +22,7 @@ describe('Schema (e2e)', () => {
     await closePool();
   });
 
-  it('1. 7 base tables exist in auth schema', async () => {
+  it('1. 8 base tables exist in auth schema', async () => {
     const { rows } = await client.query<{ table_name: string }>(
       `SELECT table_name 
        FROM information_schema.tables 
@@ -33,6 +33,7 @@ describe('Schema (e2e)', () => {
     const tableNames = rows.map((r) => r.table_name);
     expect(tableNames).toEqual([
       'addresses',
+      'outbox',
       'permissions',
       'refresh_tokens',
       'role_permissions',
@@ -59,6 +60,7 @@ describe('Schema (e2e)', () => {
       'idx_refresh_tokens_expires_at',
       'idx_role_permissions_permission_id',
       'idx_user_roles_role_id',
+      'idx_outbox_pending',
       'users_email_key',
       'refresh_tokens_token_hash_key',
     ];

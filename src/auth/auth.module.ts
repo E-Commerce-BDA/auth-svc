@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { createOutboxModule } from '@ecom/messaging/nest';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import {
@@ -8,6 +9,8 @@ import {
   JWT_AUDIENCE,
   JWT_ISSUER,
 } from './auth.constants.js';
+import { getPool } from '../db/pool.js';
+import { AuthOutbox } from '../outbox/auth-outbox.js';
 
 @Module({
   imports: [
@@ -24,9 +27,17 @@ import {
         },
       }),
     }),
+    // Everything the outbox needs (claim SQL, leases, retries, envelope) lives
+    // in the package; auth-svc only names its schema and producer.
+    createOutboxModule({
+      schema: 'auth',
+      producer: 'auth-svc',
+      clientId: 'auth-svc',
+      pool: getPool,
+    }),
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, AuthOutbox],
   exports: [JwtModule],
 })
 export class AuthModule {}

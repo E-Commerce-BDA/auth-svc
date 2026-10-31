@@ -3,10 +3,12 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module.js';
-import { closePool } from '../src/db/pool.js';
+import { closePool, getPool } from '../src/db/pool.js';
 
 describe('Auth Register (e2e)', () => {
   let app: INestApplication;
+  /** Users this suite created, so the outbox rows can be cleaned up after it. */
+  const createdUserIds: string[] = [];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -29,6 +31,13 @@ describe('Auth Register (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+    if (createdUserIds.length > 0) {
+      // Scoped by aggregate id: spec files run in parallel against one database.
+      await getPool().query(
+        'DELETE FROM auth.outbox WHERE aggregate_id = ANY($1::uuid[])',
+        [createdUserIds],
+      );
+    }
     await closePool();
   });
 
@@ -56,6 +65,8 @@ describe('Auth Register (e2e)', () => {
     expect(response.body.user.lastName).toBe('Gada');
     expect(response.body.user).not.toHaveProperty('password');
     expect(response.body.user).not.toHaveProperty('password_hash');
+
+    createdUserIds.push(response.body.user.id);
   });
 
   it('POST /api/v1/auth/register rejects duplicate email with 409 Conflict', async () => {
@@ -68,10 +79,11 @@ describe('Auth Register (e2e)', () => {
     };
 
     // First registration succeeds
-    await request(app.getHttpServer())
+    const first = await request(app.getHttpServer())
       .post('/api/v1/auth/register')
       .send(payload)
       .expect(201);
+    createdUserIds.push(first.body.user.id);
 
     // Second registration with the same email (even with uppercase letters) fails with 409
     const response = await request(app.getHttpServer())
